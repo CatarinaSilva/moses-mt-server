@@ -19,6 +19,8 @@ def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
 class OnlineMGiza(object):
 
     def __init__(self, commandline, logfile):
+	print "commandline = %s", commandline
+	print "logfile = %s", logfile
         self.cmd = commandline.split()
         self.devnull = open(os.devnull, "w")
         self.proc = None
@@ -65,6 +67,7 @@ class OnlineMGiza(object):
 
     # start the mgiza binary process
     def __restart(self):
+        print "logfile = %s" % self.logfile_prefix
         if self.proc:
             self.proc.communicate("EOA\n")
         if self.logfile_prefix:
@@ -73,6 +76,7 @@ class OnlineMGiza(object):
         else:
             err = self.devnull
         self.ready = False
+        print "logfile = %s" % err
         self.proc = subprocess.Popen(self.cmd,
                                      stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE,

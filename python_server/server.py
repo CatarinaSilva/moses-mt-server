@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys
 import threading
 import subprocess
@@ -79,6 +80,11 @@ class ExternalProcessor(object):
             self.proc = popen(cmd)
             self._lock = threading.Lock()
 
+    def ignore_line(self,count):
+        for x in xrange(count):
+            with self._lock:
+                ignore = self.proc.stdout.readline()
+
     def process(self, line):
         if self.cmd == None: return line
         u_string = u"%s\n" %line
@@ -126,13 +132,14 @@ class Root(object):
     required_params = ["q", "key", "target", "source"]
 
     def __init__(self, moses_url, external_processors, tgt_external_processors,
-                 bidir_aligner=None,
+                 fast_align=None,bidir_aligner=None,
                  slang=None, tlang=None, pretty=False, verbose=0, timeout=-1):
         self.filter = Filter(remove_newlines=True, collapse_spaces=True)
         self.moses_url = moses_url
         self.external_processors = external_processors
         self.tgt_external_processors = tgt_external_processors
         self.bidir_aligner = bidir_aligner
+	self.fast_align = fast_align
 
         self.expected_params = {}
         if slang:
@@ -432,28 +439,23 @@ class Root(object):
         response = cherrypy.response
         response.headers['Content-Type'] = 'application/json'
 
-        if self.bidir_aligner == None:
+        if self.bidir_aligner == None and self.fast_align == None:
             message = "need bidirectional aligner for updates"
             return self._dump_json ({"error": {"code":400, "message":message}})
 
         source = self.filter.filter(kwargs["q"])
         target = self.filter.filter(kwargs["t"])
 
-        print "Aligning: %s / %s" %(source.encode('utf8'),target.encode('utf8'))
+        #print u"Aligning: %s / %s" %(source,target)
 
         # pre-processing of source and target
         source_preprocessed, source_spans = self._track_preprocessing(source, is_source=True)
         target_preprocessed, target_spans = self._track_preprocessing(target, is_source=False)
 
         # set mode
-        mode = 's2t'
+        mode = 'sym'
         if 'mode' in kwargs:
             mode = self.filter.filter(kwargs["mode"])
-
-	# aligner must exist
-        if self.bidir_aligner == None:
-            message = "need bidirectional aligner for updates"
-            return self._dump_json ({"error": {"code":400, "message":message}})
 
 	# return empty alignment matrix on failure
         alignment = ''
@@ -461,6 +463,24 @@ class Root(object):
         if len(target_preprocessed) == 0 or len(source_preprocessed) == 0:
 	    print "no target words... return no alignment points"
 	    alignment = []
+
+        # using fast align
+	elif self.fast_align != None:
+	    sentence_pair = "%s ||| %s" %(source_preprocessed, target_preprocessed)
+	    #print "calling aligner with %s" % sentence_pair.encode('utf8')
+	    alignment_line = self.fast_align.process(sentence_pair).strip()
+	    #print "received %s" % alignment_line
+            alignment = []
+            for alignment_point in alignment_line.split(" "):
+                ap = alignment_point.split("-")
+                src_idx = int(ap[0])
+                tgt_idx = int(ap[1])
+                alignment.append( {"tgt_idx": tgt_idx,
+                                   "src_idx": src_idx,
+                                   "src_word": source_preprocessed[src_idx],
+                                   "tgt_word": target_preprocessed[tgt_idx]})
+
+        # using variants of online mgiza
         elif mode == 's2t':
 	    print "yep. %s / %s" %(source_preprocessed.encode('utf8'),target_preprocessed.encode('utf8'))
             alignment = self.bidir_aligner.s2t.align(source_preprocessed, target_preprocessed)
@@ -507,7 +527,6 @@ class Root(object):
 
             alignment_dict = []
             for src_idx, tgt_idx in alignment:
-            #for tgt_idx, src_idx in alignment:
                 alignment_dict.append( {"tgt_idx": tgt_idx,
                                         "src_idx": src_idx,
                                         "src_word": source_preprocessed[src_idx],
@@ -550,19 +569,15 @@ class Root(object):
         assert len(translation_preprocessed.split()) == len(a_s2t)
         assert len(segment_preprocessed.split()) == len(a_t2s)
 
-        print "E";
         alignment = self.bidir_aligner.symal.symmetrize(segment_preprocessed, translation_preprocessed, a_s2t, a_t2s)
-        print "F";
         alignment_strings = []
         for src_idx, tgt_idx in alignment:
             alignment_strings.append( "%d-%d" %(src_idx, tgt_idx) )
-        print "G %s" % alignment_strings;
 
         self.log("Updating model with src: %s tgt: %s, align: %s" \
                  %(segment_preprocessed.encode('utf8'),
                    translation_preprocessed.encode('utf8'),
                    " ".join(alignment_strings)))
-        print "H";
 
         self._update(segment_preprocessed, translation_preprocessed, " ".join(alignment_strings))
         update_dict = {'segment':segment_preprocessed, 'translation':translation_preprocessed, 'alignment':alignment}
@@ -617,6 +632,7 @@ if __name__ == "__main__":
     parser.add_argument('-symal', help="path to symal, including arguments")
     parser.add_argument('-omgiza_src2tgt', help='path of online-MGiza++, including arguments for src-tgt alignment')
     parser.add_argument('-omgiza_tgt2src', help='path of online-MGiza++, including arguments for tgt-src alignment')
+    parser.add_argument('-fast-align', help='symmetrized incremental fast align call')
 
     parser.add_argument('-pretty', action='store_true', help='pretty print json')
     parser.add_argument('-slang', help='source language code')
@@ -655,6 +671,15 @@ if __name__ == "__main__":
     symal_wrapper = symal.SymalWrapper(args.symal) if args.symal else None
     bidir_aligner = aligner.BidirectionalAligner(giza_s2t, giza_t2s, symal_wrapper)
 
+    # online fast align
+    fast_align = None
+    if args.fast_align:
+	sys.stderr.write("calling %s\n" % args.fast_align)
+        fast_align = ExternalProcessor(args.fast_align)
+        sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
+        fast_align.ignore_line(3)
+        sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
+
     cherrypy.config.update({'server.request_queue_size' : 1000,
                             'server.socket_port': args.port,
                             'server.thread_pool': args.nthreads,
@@ -667,6 +692,7 @@ if __name__ == "__main__":
     cherrypy.quickstart(Root(args.moses_url,
                              external_processors = external_processors,
                              tgt_external_processors = tgt_external_processors,
+                             fast_align = fast_align,
                              bidir_aligner = bidir_aligner,
                              slang = args.slang, tlang = args.tlang,
                              pretty = args.pretty,
