@@ -677,8 +677,8 @@ if __name__ == "__main__":
 	sys.stderr.write("calling %s\n" % args.fast_align)
         fast_align = ExternalProcessor(args.fast_align)
         sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
-        fast_align.ignore_line(3)
-        sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
+        #fast_align.ignore_line(3)
+        #sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
 
     cherrypy.config.update({'server.request_queue_size' : 1000,
                             'server.socket_port': args.port,
