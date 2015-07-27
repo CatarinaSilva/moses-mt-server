@@ -467,9 +467,9 @@ class Root(object):
         # using fast align
 	elif self.fast_align != None:
 	    sentence_pair = "%s ||| %s" %(source_preprocessed, target_preprocessed)
-	    #print "calling aligner with %s" % sentence_pair.encode('utf8')
+	    print "calling aligner with %s" % sentence_pair.encode('utf8')
 	    alignment_line = self.fast_align.process(sentence_pair).strip()
-	    #print "received %s" % alignment_line
+	    print "received %s" % alignment_line
             alignment = []
             for alignment_point in alignment_line.split(" "):
                 ap = alignment_point.split("-")
@@ -564,22 +564,23 @@ class Root(object):
             message = "length mismatch - rejected"
             return self._dump_json ({"error": {"code":400, "message":message}})
 
-        a_s2t = self.bidir_aligner.s2t.align(segment_preprocessed, translation_preprocessed)
-        a_t2s = self.bidir_aligner.t2s.align(translation_preprocessed, segment_preprocessed)
-        assert len(translation_preprocessed.split()) == len(a_s2t)
-        assert len(segment_preprocessed.split()) == len(a_t2s)
-
-        alignment = self.bidir_aligner.symal.symmetrize(segment_preprocessed, translation_preprocessed, a_s2t, a_t2s)
-        alignment_strings = []
-        for src_idx, tgt_idx in alignment:
-            alignment_strings.append( "%d-%d" %(src_idx, tgt_idx) )
-
+	sentence_pair = "%s ||| %s" %(source_preprocessed, target_preprocessed)
+	alignment_line = self.fast_align.process(sentence_pair).strip()
         self.log("Updating model with src: %s tgt: %s, align: %s" \
                  %(segment_preprocessed.encode('utf8'),
                    translation_preprocessed.encode('utf8'),
-                   " ".join(alignment_strings)))
+                   alignment_line))
+        self._update(segment_preprocessed, translation_preprocessed, " ".join(alignment_line))
 
-        self._update(segment_preprocessed, translation_preprocessed, " ".join(alignment_strings))
+        alignment = []
+        for alignment_point in alignment_line.split(" "):
+          ap = alignment_point.split("-")
+          src_idx = int(ap[0])
+          tgt_idx = int(ap[1])
+          alignment.append( {"tgt_idx": tgt_idx,
+                             "src_idx": src_idx,
+                             "src_word": source_preprocessed[src_idx],
+                             "tgt_word": target_preprocessed[tgt_idx]})
         update_dict = {'segment':segment_preprocessed, 'translation':translation_preprocessed, 'alignment':alignment}
         data = {"data" : {"update" : [update_dict]}}
         return self._dump_json(data)
@@ -676,9 +677,9 @@ if __name__ == "__main__":
     if args.fast_align:
 	sys.stderr.write("calling %s\n" % args.fast_align)
         fast_align = ExternalProcessor(args.fast_align)
-        sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
+        sys.stderr.write("called with test -> %s\n" % fast_align.process("test ||| test").encode('utf8'))
         #fast_align.ignore_line(3)
-        #sys.stderr.write("called with test -> %s\n" % fast_align.process("test").encode('utf8'))
+        #sys.stderr.write("called with test -> %s\n" % fast_align.process("test ||| test").encode('utf8'))
 
     cherrypy.config.update({'server.request_queue_size' : 1000,
                             'server.socket_port': args.port,
