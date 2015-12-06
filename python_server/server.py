@@ -564,12 +564,12 @@ class Root(object):
             message = "length mismatch - rejected"
             return self._dump_json ({"error": {"code":400, "message":message}})
 
-	sentence_pair = "%s ||| %s" %(source_preprocessed, target_preprocessed)
+	sentence_pair = "%s ||| %s" %(segment_preprocessed, translation_preprocessed)
 	alignment_line = self.fast_align.process(sentence_pair).strip()
         self.log("Updating model with src: %s tgt: %s, align: %s" \
                  %(segment_preprocessed.encode('utf8'),
                    translation_preprocessed.encode('utf8'),
-                   alignment_line))
+                   alignment_line.encode('utf8')))
         self._update(segment_preprocessed, translation_preprocessed, " ".join(alignment_line))
 
         alignment = []
@@ -579,8 +579,8 @@ class Root(object):
           tgt_idx = int(ap[1])
           alignment.append( {"tgt_idx": tgt_idx,
                              "src_idx": src_idx,
-                             "src_word": source_preprocessed[src_idx],
-                             "tgt_word": target_preprocessed[tgt_idx]})
+                             "src_word": segment_preprocessed[src_idx],
+                             "tgt_word": translation_preprocessed[tgt_idx]})
         update_dict = {'segment':segment_preprocessed, 'translation':translation_preprocessed, 'alignment':alignment}
         data = {"data" : {"update" : [update_dict]}}
         return self._dump_json(data)
