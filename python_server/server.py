@@ -10,6 +10,8 @@ import time
 import re
 import xmlrpclib
 import math
+import codecs
+from collections import defaultdict
 from threading import Timer
 from aligner import mgiza, symal, aligner
 from tokentracker import tokentracker
@@ -133,13 +135,14 @@ class Root(object):
 
     def __init__(self, moses_url, external_processors, tgt_external_processors,
                  fast_align=None,bidir_aligner=None,
-                 slang=None, tlang=None, pretty=False, verbose=0, timeout=-1):
+                 slang=None, tlang=None, pretty=False, verbose=0, timeout=-1, word_conf_dict=None):
         self.filter = Filter(remove_newlines=True, collapse_spaces=True)
         self.moses_url = moses_url
         self.external_processors = external_processors
         self.tgt_external_processors = tgt_external_processors
         self.bidir_aligner = bidir_aligner
 	self.fast_align = fast_align
+        self.word_conf_dict = word_conf_dict
 
         self.expected_params = {}
         if slang:
@@ -435,6 +438,25 @@ class Root(object):
         return self._dump_json(data)
 
     @cherrypy.expose
+    def confidence(self, **kwargs):
+        tokenized_data = json.loads(self.tokenize(**kwargs))
+
+        tokenizedSource = tokenized_data['data']['tokenizedSource'].split()
+        tokenizedTarget = tokenized_data['data']['tokenizedTarget'].split()
+
+        source_spans = tokenized_data['data']['tokenization']['src']
+        target_spans = tokenized_data['data']['tokenization']['tgt']
+
+        sentence_confidence = 1  # not handling this now
+        word_confidences = [max([math.exp(self.word_conf_dict[(s.encode('utf-8'), t.encode('utf-8'))]) for s in tokenizedSource]) for t in tokenizedTarget]
+
+        data = { 'data':
+            { 'tokenization': { 'src': source_spans, 'tgt': target_spans },
+                'confidence': { 'sentence': sentence_confidence, 'word': word_confidences }}}
+
+        return self._dump_json(data)
+
+    @cherrypy.expose
     def align(self, **kwargs):
         response = cherrypy.response
         response.headers['Content-Type'] = 'application/json'
@@ -681,6 +703,17 @@ if __name__ == "__main__":
         #fast_align.ignore_line(3)
         #sys.stderr.write("called with test -> %s\n" % fast_align.process("test ||| test").encode('utf8'))
 
+    # read fast align parameters into word confidence dictionary
+    word_conf_dict = None
+    if args.fast_align:
+        path = args.fast_align.split()[1]  # s2t fast-align parameters
+        word_conf_dict = defaultdict(lambda: float('-inf'))
+        with codecs.open(path, encoding='utf-8') as fin:
+            for line in fin.readlines():
+                arr = line.strip().split(' ')
+                word_conf_dict[(arr[0].encode('utf-8'), arr[1].encode('utf-8'))] = float(arr[2])
+
+
     cherrypy.config.update({'server.request_queue_size' : 1000,
                             'server.socket_port': args.port,
                             'server.thread_pool': args.nthreads,
@@ -697,4 +730,5 @@ if __name__ == "__main__":
                              bidir_aligner = bidir_aligner,
                              slang = args.slang, tlang = args.tlang,
                              pretty = args.pretty,
-                             verbose = args.verbose))
+                             verbose = args.verbose,
+                             word_conf_dict = word_conf_dict))
