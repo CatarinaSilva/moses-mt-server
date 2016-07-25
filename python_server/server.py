@@ -134,13 +134,14 @@ class Root(object):
     required_params = ["q", "key", "target", "source"]
 
     def __init__(self, moses_url, external_processors, tgt_external_processors,
-                 fast_align=None,bidir_aligner=None,
+                 fast_align=None,bidir_aligner=None, update_model=True,
                  slang=None, tlang=None, pretty=False, verbose=0, timeout=-1, word_conf_dict=None):
         self.filter = Filter(remove_newlines=True, collapse_spaces=True)
         self.moses_url = moses_url
         self.external_processors = external_processors
         self.tgt_external_processors = tgt_external_processors
         self.bidir_aligner = bidir_aligner
+        self.update_model = update_model
 	self.fast_align = fast_align
         self.word_conf_dict = word_conf_dict
 
@@ -571,6 +572,10 @@ class Root(object):
 
     @cherrypy.expose
     def update(self, source, target, q, t):
+        if self.update_model == 0:
+            message = "model cannot be updated"
+            return self._dump_json ({"error": {"code":400, "message":message}})
+
         if self.bidir_aligner == None:
             message = "need bidirectional aligner for updates"
             return self._dump_json ({"error": {"code":400, "message":message}})
@@ -663,6 +668,7 @@ if __name__ == "__main__":
     #parser.add_argument('-log', choices=['DEBUG', 'INFO'], help='logging level, default:DEBUG', default='DEBUG')
     parser.add_argument('-logprefix', help='logfile prefix, default: write to stderr')
     parser.add_argument('-verbose', help='verbosity level, default: 0', type=int, default=0)
+    parser.add_argument('-update-model', help='update machine translation model, default: 1', type=int, default=1)
     # persistent threads
     thread_options = parser.add_mutually_exclusive_group()
     thread_options.add_argument('-persist', action='store_true', help='keep pre/postprocessing scripts running')
@@ -728,6 +734,7 @@ if __name__ == "__main__":
                              tgt_external_processors = tgt_external_processors,
                              fast_align = fast_align,
                              bidir_aligner = bidir_aligner,
+			     update_model = args.update_model,
                              slang = args.slang, tlang = args.tlang,
                              pretty = args.pretty,
                              verbose = args.verbose,
