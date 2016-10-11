@@ -172,7 +172,7 @@ class Root(object):
         for key, val in self.expected_params.iteritems():
             assert key in params, "expected param %s" %key
             if params[key].lower() != val:
-                message = "expetect value for parameter %s:'%s'" %(key,val)
+                message = "expected value for parameter %s:'%s'" %(key,val)
                 errors.append({"domain":"global",
                                "reason":"invalid value: '%s'" %params[key],
                                "message":message,
@@ -247,8 +247,8 @@ class Root(object):
         sentence_postprocessed  = processors.postpro(sentence_detokenized)
         spans = tracker.track_detok(sentence, sentence_detruecased, verbose=verbose)
         spans = tracker.track_detok(sentence_detruecased, sentence_detokenized, spans=spans, verbose=verbose, check_escape=True)
-        spans = tracker.track_detok(sentence_postprocessed, sentence_detokenized, spans=spans, verbose=verbose)
-        return sentence_detokenized, spans
+        spans = tracker.track_detok(sentence_detokenized, sentence_postprocessed, spans=spans, verbose=verbose)
+        return sentence_postprocessed, spans
 
     @cherrypy.expose
     def tokenize(self, **kwargs):
